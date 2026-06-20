@@ -178,8 +178,7 @@ public class MainActivity extends AppCompatActivity implements ServiceConnection
             }
         });
 
-        // 定制修改点：只要打开应用，即使之前没有运行，也强制模拟，并启动定位服务。
-        // 原逻辑：if (endTime > System.currentTimeMillis()) { ... }
+        // 定制修改点：只要打开应用，自动触发后台模拟定位服务
         changeButtonToStop();
         Intent autoIntent = new Intent(this, MockedLocationService.class);
         bindService(autoIntent, this, BIND_AUTO_CREATE);
@@ -215,14 +214,14 @@ public class MainActivity extends AppCompatActivity implements ServiceConnection
 
         version = sharedPref.getInt("version", 0);
         
-        // 定制修改点：将初始经纬度的默认值(原本是12和15)直接硬编码为吉隆坡的坐标
+        // 定制修改点：将初始经纬度的默认值直接固定为吉隆坡 (3.1390, 101.6869)
         lat = getDouble(sharedPref, "lat", 3.1390);
         lng = getDouble(sharedPref, "lng", 101.6869);
         zoom = getDouble(sharedPref, "zoom", 12);
         
-        // 定制修改点：确保 mockCount 默认为持续模拟状态，不至于单次模拟完就结束
-        mockCount = sharedPref.getInt("mockCount", 0); 
-        if (mockCount <= 0) mockCount = 999999; // 如果没有设置过，赋予一个极大的模拟次数实现持续固定
+        // 定制修改点：赋予一个极大的模拟次数实现持续固定定位
+        mockCount = sharedPref.getInt("mockCount", 0);
+        if (mockCount <= 0) mockCount = 999999;
         
         mockFrequency = sharedPref.getInt("mockFrequency", 10);
         if (mockFrequency <= 0) mockFrequency = 1;
@@ -413,7 +412,7 @@ public class MainActivity extends AppCompatActivity implements ServiceConnection
         if (binder == null) return;
         binder.mockState.removeObservers(this);
         binder.mockedLocation.removeObservers(this);
-        binder.null;
+        binder = null; // 👈 已经修正此行的语法错误
         indicateMockStop();
     }
 
