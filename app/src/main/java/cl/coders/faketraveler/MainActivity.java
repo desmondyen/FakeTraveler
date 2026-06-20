@@ -70,7 +70,6 @@ public class MainActivity extends AppCompatActivity implements ServiceConnection
     @Nullable
     private MockedLocationService.MockedBinder binder = null;
 
-    // Config
     private int version;
     private double lat;
     private double lng;
@@ -90,10 +89,7 @@ public class MainActivity extends AppCompatActivity implements ServiceConnection
         setContentView(R.layout.activity_main);
 
         ViewCompat.setOnApplyWindowInsetsListener(findViewById(R.id.main_layout), (v, insets) -> {
-            Insets bars = insets.getInsets(
-                    WindowInsetsCompat.Type.systemBars()
-                            | WindowInsetsCompat.Type.displayCutout()
-            );
+            Insets bars = insets.getInsets(WindowInsetsCompat.Type.systemBars() | WindowInsetsCompat.Type.displayCutout());
             v.setPadding(bars.left, bars.top, bars.right, bars.bottom);
             return WindowInsetsCompat.CONSUMED;
         });
@@ -136,16 +132,10 @@ public class MainActivity extends AppCompatActivity implements ServiceConnection
         applyIntentOrDefault(getIntent());
 
         editTextLat.addTextChangedListener(new TextWatcher() {
-            @Override
-            public void afterTextChanged(Editable s) {
+            @Override public void afterTextChanged(Editable s) {
                 if (!editTextLat.getText().toString().isEmpty() && !editTextLat.getText().toString().equals("-")) {
                     if (srcChange != CHANGE_FROM_MAP) {
-                        try {
-                            lat = Double.parseDouble(editTextLat.getText().toString());
-                            setLatLng(lat, lng, CHANGE_FROM_EDITTEXT);
-                        } catch (Throwable t) {
-                            Log.e(MainActivity.class.toString(), "Could not read latitude!", t);
-                        }
+                        try { lat = Double.parseDouble(editTextLat.getText().toString()); setLatLng(lat, lng, CHANGE_FROM_EDITTEXT); } catch (Throwable t) {}
                     }
                 }
             }
@@ -154,16 +144,10 @@ public class MainActivity extends AppCompatActivity implements ServiceConnection
         });
 
         editTextLng.addTextChangedListener(new TextWatcher() {
-            @Override
-            public void afterTextChanged(Editable s) {
+            @Override public void afterTextChanged(Editable s) {
                 if (!editTextLng.getText().toString().isEmpty() && !editTextLng.getText().toString().equals("-")) {
                     if (srcChange != CHANGE_FROM_MAP) {
-                        try {
-                            lng = Double.parseDouble(editTextLng.getText().toString());
-                            setLatLng(lat, lng, CHANGE_FROM_EDITTEXT);
-                        } catch (Throwable t) {
-                            Log.e(MainActivity.class.toString(), "Could not read longitude!", t);
-                        }
+                        try { lng = Double.parseDouble(editTextLng.getText().toString()); setLatLng(lat, lng, CHANGE_FROM_EDITTEXT); } catch (Throwable t) {}
                     }
                 }
             }
@@ -171,59 +155,71 @@ public class MainActivity extends AppCompatActivity implements ServiceConnection
             @Override public void onTextChanged(CharSequence s, int start, int before, int count) {}
         });
 
-        // ✨ 优化一：动态申请 Android 13-16 强推的通知权限，确保前台常驻通知不被拦截
+        // 🛡️ 安全加固：只有在用户同时勾选了“定位权限”以及“开发者选项模拟器绑定”后，才允许后台服务初始化，彻底杜绝闪退
+        requestRequiredPermissions();
+    }
+
+    private void requestRequiredPermissions() {
+        String[] permissions;
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
-            if (ContextCompat.checkSelfPermission(this, Manifest.permission.POST_NOTIFICATIONS) 
-                    != PackageManager.PERMISSION_GRANTED) {
-                ActivityCompat.requestPermissions(this, 
-                        new String[]{Manifest.permission.POST_NOTIFICATIONS}, 101);
+            permissions = new String[]{Manifest.permission.ACCESS_FINE_LOCATION, Manifest.permission.ACCESS_COARSE_LOCATION, Manifest.permission.POST_NOTIFICATIONS};
+        } else {
+            permissions = new String[]{Manifest.permission.ACCESS_FINE_LOCATION, Manifest.permission.ACCESS_COARSE_LOCATION};
+        }
+
+        boolean needRequest = false;
+        for (String perm : permissions) {
+            if (ContextCompat.checkSelfPermission(this, perm) != PackageManager.PERMISSION_GRANTED) {
+                needRequest = true;
+                break;
             }
         }
 
-        // ✨ 优化二：1.5秒延迟服务绑定逻辑
-        // 避开 Android 15/16 严苛的冷启动安全生命周期审查，确保界面完全稳定渲染后再注入 Mock 进程
+        if (needRequest) {
+            ActivityCompat.requestPermissions(this, permissions, 102);
+        } else {
+            startAutoMockService();
+        }
+    }
+
+    @Override
+    public void onRequestPermissionsResult(int requestCode, @NonNull String[] permissions, @NonNull int[] grantResults) {
+        super.onRequestPermissionsResult(requestCode, permissions, grantResults);
+        // 无论用户有没有完全允许通知，我们都尝试启动（定位权限是核心）
+        startAutoMockService();
+    }
+
+    private void startAutoMockService() {
+        // 使用 2 秒延迟，等待 Android 16 沙箱生命周期以及系统 Mock 标志位就位后再进行拉起
         new Handler(Looper.getMainLooper()).postDelayed(() -> {
             try {
                 changeButtonToStop();
                 Intent autoIntent = new Intent(this, MockedLocationService.class);
                 bindService(autoIntent, this, BIND_AUTO_CREATE);
+            } catch (SecurityException se) {
+                Log.e(MainActivity.class.toString(), "安全拒绝：请先去开发者选项中选择本应用为模拟位置应用！", se);
+                changeButtonToApply();
+                showSnackbar("请先前往开发者选项勾选本应用！");
             } catch (Exception e) {
-                Log.e(MainActivity.class.toString(), "自动绑定定位服务失败", e);
+                Log.e(MainActivity.class.toString(), "绑定服务失败", e);
             }
-        }, 1500);
+        }, 2000);
     }
 
     @Override
-    protected void onResume() {
-        super.onResume();
-        context = getApplicationContext();
-        loadSharedPrefs();
-    }
-
-    @Override
-    protected void onNewIntent(Intent intent) {
-        super.onNewIntent(intent);
-        loadSharedPrefs();
-        applyIntentOrDefault(intent);
-    }
-
-    @Override
-    public void onDestroy() {
-        super.onDestroy();
-    }
+    protected void onResume() { super.onResume(); context = getApplicationContext(); loadSharedPrefs(); }
+    @Override protected void onNewIntent(Intent intent) { super.onNewIntent(intent); loadSharedPrefs(); applyIntentOrDefault(intent); }
+    @Override public void onDestroy() { super.onDestroy(); }
 
     private void loadSharedPrefs() {
         migrateOldPreferences(context);
         SharedPreferences sharedPref = context.getSharedPreferences(sharedPrefKey, Context.MODE_PRIVATE);
-
         version = sharedPref.getInt("version", 0);
-        lat = getDouble(sharedPref, "lat", 3.1390); // 默认坐标固定为吉隆坡
+        lat = getDouble(sharedPref, "lat", 3.1390); // 锁定吉隆坡
         lng = getDouble(sharedPref, "lng", 101.6869);
         zoom = getDouble(sharedPref, "zoom", 12);
-        
         mockCount = sharedPref.getInt("mockCount", 0);
-        if (mockCount <= 0) mockCount = 999999; // 循环模拟次数
-        
+        if (mockCount <= 0) mockCount = 999999;
         mockFrequency = sharedPref.getInt("mockFrequency", 10);
         if (mockFrequency <= 0) mockFrequency = 1;
         dLat = getDouble(sharedPref, "dLat", 0);
@@ -231,27 +227,14 @@ public class MainActivity extends AppCompatActivity implements ServiceConnection
         mockSpeed = sharedPref.getBoolean("mockSpeed", true);
         endTime = sharedPref.getLong("endTime", 0);
         mapProvider = sharedPref.getString("mapProvider", MapProviderUtil.getDefaultMapProvider(Locale.getDefault()));
-
-        if (version != currentVersion) {
-            version = currentVersion;
-            saveSettings();
-        }
+        if (version != currentVersion) { version = currentVersion; saveSettings(); }
     }
 
     private void saveSettings() {
         Editor editor = context.getSharedPreferences(sharedPrefKey, Context.MODE_PRIVATE).edit();
-        editor.putInt("version", version);
-        putDouble(editor, "lat", lat);
-        putDouble(editor, "lng", lng);
-        putDouble(editor, "zoom", zoom);
-        editor.putInt("mockCount", mockCount);
-        editor.putInt("mockFrequency", mockFrequency);
-        putDouble(editor, "dLat", dLat);
-        putDouble(editor, "dLng", dLng);
-        editor.putBoolean("mockSpeed", mockSpeed);
-        editor.putLong("endTime", endTime);
-        editor.putString("mapProvider", mapProvider);
-        editor.apply();
+        editor.putInt("version", version); putDouble(editor, "lat", lat); putDouble(editor, "lng", lng); putDouble(editor, "zoom", zoom);
+        editor.putInt("mockCount", mockCount); editor.putInt("mockFrequency", mockFrequency); putDouble(editor, "dLat", dLat); putDouble(editor, "dLng", dLng);
+        editor.putBoolean("mockSpeed", mockSpeed); editor.putLong("endTime", endTime); editor.putString("mapProvider", mapProvider); editor.apply();
     }
 
     private void applyIntentOrDefault(Intent intent) {
@@ -259,152 +242,63 @@ public class MainActivity extends AppCompatActivity implements ServiceConnection
         if (intentData != null) {
             try {
                 GeoUri uri = GeoUri.parse(intentData);
-                if (uri != null) {
-                    lat = uri.lat();
-                    lng = uri.lng();
-                    Double zoomTmp = uri.zoom();
-                    if (zoomTmp != null) zoom = zoomTmp;
-                }
-            } catch (Throwable t) {
-                Log.e(MainActivity.class.toString(), "Could not read geo intent!", t);
-            }
+                if (uri != null) { lat = uri.lat(); lng = uri.lng(); Double zoomTmp = uri.zoom(); if (zoomTmp != null) zoom = zoomTmp; }
+            } catch (Throwable t) {}
         }
-
         setLatLng(lat, lng, LOAD);
-
-        webView.loadUrl(Uri.parse("file:///android_asset/map.html").buildUpon()
-                .appendQueryParameter("lat", "" + lat)
-                .appendQueryParameter("lng", "" + lng)
-                .appendQueryParameter("zoom", "" + zoom)
-                .appendQueryParameter("provider", mapProvider)
-                .build()
-                .toString());
+        webView.loadUrl(Uri.parse("file:///android_asset/map.html").buildUpon().appendQueryParameter("lat", "" + lat).appendQueryParameter("lng", "" + lng).appendQueryParameter("zoom", "" + zoom).appendQueryParameter("provider", mapProvider).build().toString());
     }
 
     protected void applyLocation() {
-        if (latIsEmpty() || lngIsEmpty()) {
-            showSnackbar(context.getResources().getString(R.string.MainActivity_NoLatLong));
-            return;
-        }
-
-        lat = Double.parseDouble(editTextLat.getText().toString());
-        lng = Double.parseDouble(editTextLng.getText().toString());
-
+        if (latIsEmpty() || lngIsEmpty()) { showSnackbar(context.getResources().getString(R.string.MainActivity_NoLatLong)); return; }
+        lat = Double.parseDouble(editTextLat.getText().toString()); lng = Double.parseDouble(editTextLng.getText().toString());
         if (binder != null) {
             float[] speed = {0};
-            if (mockSpeed) {
-                Location.distanceBetween(lat, lng, lat + dLat / 1000000, lng + dLng / 1000000, speed);
-                speed[0] /= mockFrequency * 1000L;
-            }
+            if (mockSpeed) { Location.distanceBetween(lat, lng, lat + dLat / 1000000, lng + dLng / 1000000, speed); speed[0] /= mockFrequency * 1000L; }
             binder.startMock(lng, lat, dLng / 1000000, dLat / 1000000, mockFrequency * 1000L, mockCount, speed[0]);
-            endTime = System.currentTimeMillis() + (mockCount - 1L) * mockFrequency * 1000L;
-            saveSettings();
+            endTime = System.currentTimeMillis() + (mockCount - 1L) * mockFrequency * 1000L; saveSettings();
         }
     }
 
-    void showSnackbar(String str) {
-        Snackbar.make(findViewById(R.id.main_layout), str, Snackbar.LENGTH_SHORT).show();
-    }
-
-    void showSnackbar(@StringRes int strRes) {
-        Snackbar.make(findViewById(R.id.main_layout), strRes, Snackbar.LENGTH_SHORT).show();
-    }
-
+    void showSnackbar(String str) { Snackbar.make(findViewById(R.id.main_layout), str, Snackbar.LENGTH_SHORT).show(); }
+    void showSnackbar(@StringRes int strRes) { Snackbar.make(findViewById(R.id.main_layout), strRes, Snackbar.LENGTH_SHORT).show(); }
     boolean latIsEmpty() { return editTextLat.getText().toString().isBlank(); }
     boolean lngIsEmpty() { return editTextLng.getText().toString().isBlank(); }
-
-    protected void setMapMarker(double lat, double lng) {
-        if (webView == null || webView.getUrl() == null) return;
-        webView.loadUrl("javascript:setOnMap(" + lat + "," + lng + ");");
-    }
+    protected void setMapMarker(double lat, double lng) { if (webView == null || webView.getUrl() == null) return; webView.loadUrl("javascript:setOnMap(" + lat + "," + lng + ");"); }
 
     void changeButtonToApply() {
         buttonApplyStop.setText(context.getResources().getString(R.string.ActivityMain_Apply));
-        buttonApplyStop.setOnClickListener(view -> {
-            if (binder == null) {
-                Intent intent = new Intent(this, MockedLocationService.class);
-                bindService(intent, this, BIND_AUTO_CREATE);
-            } else {
-                binder.continueMock();
-            }
-        });
+        buttonApplyStop.setOnClickListener(view -> { if (binder == null) { Intent intent = new Intent(this, MockedLocationService.class); bindService(intent, this, BIND_AUTO_CREATE); } else { binder.continueMock(); } });
     }
 
     void changeButtonToStop() {
         buttonApplyStop.setText(context.getResources().getString(R.string.ActivityMain_Stop));
-        buttonApplyStop.setOnClickListener(view -> {
-            try {
-                unbindService(this);
-            } catch (Exception e) {
-                Log.w(MainActivity.class.toString(), "Service already unbound", e);
-            }
-            disconnectService();
-        });
+        buttonApplyStop.setOnClickListener(view -> { try { unbindService(this); } catch (Exception e) {} disconnectService(); });
     }
 
-    public void setZoom(double zoom) {
-        this.zoom = zoom;
-        saveSettings();
-    }
-
+    public void setZoom(double zoom) { this.zoom = zoom; saveSettings(); }
     void setLatLng(double mLat, double mLng, SourceChange srcChange) {
-        lat = mLat;
-        lng = mLng;
-
-        if (srcChange == CHANGE_FROM_EDITTEXT || srcChange == LOAD) {
-            setMapMarker(lat, lng);
-        }
-        if (srcChange == CHANGE_FROM_MAP || srcChange == LOAD) {
-            this.srcChange = CHANGE_FROM_MAP;
-            editTextLat.setText(DECIMAL_FORMAT.format(lat));
-            editTextLng.setText(DECIMAL_FORMAT.format(lng));
-            this.srcChange = NONE;
-        }
+        lat = mLat; lng = mLng;
+        if (srcChange == CHANGE_FROM_EDITTEXT || srcChange == LOAD) { setMapMarker(lat, lng); }
+        if (srcChange == CHANGE_FROM_MAP || srcChange == LOAD) { this.srcChange = CHANGE_FROM_MAP; editTextLat.setText(DECIMAL_FORMAT.format(lat)); editTextLng.setText(DECIMAL_FORMAT.format(lng)); this.srcChange = NONE; }
         saveSettings();
     }
 
-    @Override
-    public void onServiceConnected(ComponentName name, IBinder service) {
-        binder = (MockedLocationService.MockedBinder) service;
-        binder.mockState.observe(this, this::onMockedStateChange);
-        binder.mockedLocation.observe(this, this::onMockedLocationChange);
-    }
+    @Override public void onServiceConnected(ComponentName name, IBinder service) { binder = (MockedLocationService.MockedBinder) service; binder.mockState.observe(this, this::onMockedStateChange); binder.mockedLocation.observe(this, this::onMockedLocationChange); }
+    @Override public void onServiceDisconnected(ComponentName name) { disconnectService(); }
 
-    @Override
-    public void onServiceDisconnected(ComponentName name) {
-        disconnectService();
-    }
-
-    private void disconnectService() {
-        if (binder == null) return;
-        binder.mockState.removeObservers(this);
-        binder.mockedLocation.removeObservers(this);
-        binder = null;
-        indicateMockStop();
-    }
+    private void disconnectService() { if (binder == null) return; binder.mockState.removeObservers(this); binder.mockedLocation.removeObservers(this); binder = null; indicateMockStop(); }
 
     private void onMockedStateChange(MockState state) {
         switch (state) {
             case NOT_MOCKED -> indicateMockStop();
             case SERVICE_BOUND -> applyLocation();
-            case MOCKED -> {
-                changeButtonToStop();
-                showSnackbar(R.string.MainActivity_MockApplied);
-            }
+            case MOCKED -> { changeButtonToStop(); showSnackbar(R.string.MainActivity_MockApplied); }
             case MOCK_ERROR -> showSnackbar(R.string.MainActivity_MockNotApplied);
         }
     }
 
-    private void indicateMockStop() {
-        showSnackbar(R.string.MainActivity_MockStopped);
-        changeButtonToApply();
-    }
-
-    private void onMockedLocationChange(Location location) {
-        setMapMarker(location.getLatitude(), location.getLongitude());
-    }
-
-    public enum SourceChange {
-        NONE, LOAD, CHANGE_FROM_EDITTEXT, CHANGE_FROM_MAP
-    }
+    private void indicateMockStop() { showSnackbar(R.string.MainActivity_MockStopped); changeButtonToApply(); }
+    private void onMockedLocationChange(Location location) { setMapMarker(location.getLatitude(), location.getLongitude()); }
+    public enum SourceChange { NONE, LOAD, CHANGE_FROM_EDITTEXT, CHANGE_FROM_MAP }
 }
