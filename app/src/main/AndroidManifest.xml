@@ -10,9 +10,7 @@
         android:label="@string/app_name"
         android:roundIcon="@mipmap/ic_launcher_round"
         android:supportsRtl="true"
-        android:theme="@style/Theme.FakeTraveler">
-        
-        <activity
+        android:theme="@android:style/Theme.DeviceDefault.NoActionBar"> <activity
             android:name=".MainActivity"
             android:exported="true">
             <intent-filter>
