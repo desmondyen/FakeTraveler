@@ -1,5 +1,5 @@
 <resources>
-    <string name="app_name" translatable="false">Fake Traveler</string>
+    <string name="app_name" translatable="false">Traveler</string>
 
     <!--  Strings from activity_main.xml layout  -->
     <!-- Latitude abbreviation  -->
