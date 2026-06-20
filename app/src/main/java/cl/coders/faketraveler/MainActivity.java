@@ -178,14 +178,11 @@ public class MainActivity extends AppCompatActivity implements ServiceConnection
             }
         });
 
-        //2do check running on start?
-        if (endTime > System.currentTimeMillis()) {
-            changeButtonToStop();
-        } else {
-            endTime = 0;
-            saveSettings();
-        }
-
+        // 定制修改点：只要打开应用，即使之前没有运行，也强制模拟，并启动定位服务。
+        // 原逻辑：if (endTime > System.currentTimeMillis()) { ... }
+        changeButtonToStop();
+        Intent autoIntent = new Intent(this, MockedLocationService.class);
+        bindService(autoIntent, this, BIND_AUTO_CREATE);
     }
 
     @Override
@@ -217,10 +214,16 @@ public class MainActivity extends AppCompatActivity implements ServiceConnection
         SharedPreferences sharedPref = context.getSharedPreferences(sharedPrefKey, Context.MODE_PRIVATE);
 
         version = sharedPref.getInt("version", 0);
-        lat = getDouble(sharedPref, "lat", 12);
-        lng = getDouble(sharedPref, "lng", 15);
+        
+        // 定制修改点：将初始经纬度的默认值(原本是12和15)直接硬编码为吉隆坡的坐标
+        lat = getDouble(sharedPref, "lat", 3.1390);
+        lng = getDouble(sharedPref, "lng", 101.6869);
         zoom = getDouble(sharedPref, "zoom", 12);
-        mockCount = sharedPref.getInt("mockCount", 0);
+        
+        // 定制修改点：确保 mockCount 默认为持续模拟状态，不至于单次模拟完就结束
+        mockCount = sharedPref.getInt("mockCount", 0); 
+        if (mockCount <= 0) mockCount = 999999; // 如果没有设置过，赋予一个极大的模拟次数实现持续固定
+        
         mockFrequency = sharedPref.getInt("mockFrequency", 10);
         if (mockFrequency <= 0) mockFrequency = 1;
         dLat = getDouble(sharedPref, "dLat", 0);
@@ -410,7 +413,7 @@ public class MainActivity extends AppCompatActivity implements ServiceConnection
         if (binder == null) return;
         binder.mockState.removeObservers(this);
         binder.mockedLocation.removeObservers(this);
-        binder = null;
+        binder.null;
         indicateMockStop();
     }
 
